@@ -50,7 +50,7 @@
 ## 📦 安装
 
 ### 方式一：安装包（推荐）
-下载 Releases 中的 `无损鉴别-章鱼出品V1_Setup_v1.0.0.exe`，双击按向导安装即可
+下载 [Releases](https://github.com/Zhou1019-1/UltraMusicTestTool/releases) 中的 `OctopusLosslessV1_Setup_v1.0.0.exe`，双击按向导安装即可
 （免管理员权限，安装到用户目录，可选桌面快捷方式）。
 
 ### 方式二：源码运行
