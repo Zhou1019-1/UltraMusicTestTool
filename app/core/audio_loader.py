@@ -190,6 +190,14 @@ def _load_pyav(path: str, sf_error: str = "") -> AudioData:
                 chunks.append(arr)
         for r in resampler.resample(None):  # 冲刷重采样器尾部
             chunks.append(np.asarray(r.to_ndarray(), dtype=np.float64))
+    except Exception as e:
+        container.close()
+        if _is_drm_encrypted(path):
+            raise AudioLoadError(
+                "DRM 加密文件 (如 Apple Music/iTunes 下载), "
+                "音频帧已加密无法解码, 请先移除 DRM 保护") from e
+        raise AudioLoadError(
+            f"解码失败: {e} (文件损坏、被平台加密或内容并非音频)") from e
     finally:
         container.close()
     if not chunks:
@@ -209,6 +217,16 @@ def _load_pyav(path: str, sf_error: str = "") -> AudioData:
         is_lossy_container=codec in LOSSY_CODECS,
         file_size=os.path.getsize(path), extra=extra,
     )
+
+
+def _is_drm_encrypted(path: str) -> bool:
+    """检测 MP4 容器是否为 CENC/DRM 加密 (stsd 含 enca/encv + sinf)"""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(2_000_000)
+        return (b"enca" in head or b"encv" in head) and b"sinf" in head
+    except OSError:
+        return False
 
 
 # ═══════════════════════════════════════════════════════════
