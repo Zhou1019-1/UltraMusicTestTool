@@ -125,15 +125,53 @@ def analyze_file(path: str) -> FileReport:
         rep.ok = True
     except AudioLoadError as e:
         rep.error = str(e)
+    except MemoryError:
+        rep.error = ("内存不足: 系统可用虚拟内存耗尽。"
+                     "请关闭其他程序, 或在系统设置中开启虚拟内存(页面文件)后重试")
     except Exception as e:  # 兜底, 防止单个文件搞崩整批
         rep.error = f"内部错误: {e}\n{traceback.format_exc(limit=3)}"
     rep.elapsed = round(time.perf_counter() - t0, 2)
     return rep
 
 
+def _available_virtual_bytes() -> int:
+    """系统剩余可提交虚拟内存 (Windows; 失败时返回足够大值)"""
+    try:
+        import ctypes
+
+        class MEMSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        s = MEMSTATUSEX()
+        s.dwLength = ctypes.sizeof(MEMSTATUSEX)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(s))
+        # ullAvailPageFile = 提交限额余量 (RAM+页面文件 中还可提交的部分)
+        return int(s.ullAvailPageFile)
+    except Exception:  # noqa: BLE001
+        return 8 * 1024**3
+
+
+# 每个分析进程的保守峰值内存估计 (大体积 Hi-Res 文件 STFT 峰值)
+_WORKER_PEAK_BYTES = 1536 * 1024**2  # 1.5GB
+
+
 def default_workers() -> int:
     cpu = os.cpu_count() or 4
-    return max(1, min(cpu - 1, 8))
+    by_cpu = max(1, min(cpu - 1, 8))
+    # 按可用虚拟内存限制并行度, 防止批量分析时整体 OOM
+    by_mem = max(1, int(_available_virtual_bytes() * 0.8
+                        // _WORKER_PEAK_BYTES))
+    return max(1, min(by_cpu, by_mem))
 
 
 def run_batch(paths, parallel=True, max_workers=None, progress_cb=None):
